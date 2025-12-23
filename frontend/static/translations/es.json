@@ -1,0 +1,21 @@
+{
+  "werewolf": "Hombres lobo, despierten y busquen a otros hombres lobo.",
+  "minion": "Esbirro, despierta. Hombres lobo, levanten el pulgar para que el Esbirro pueda verlos.",
+  "alpha-wolf": "Lobo Alfa, despierta e intercambia la carta de Hombre Lobo del centro con la carta de otro jugador.",
+  "mystic-wolf": "Lobo Místico, despierta y mira la carta de otro jugador.",
+  "villager": "Aldeanos, sigan durmiendo.",
+  "sentinel": "Centinela, despierta. Puedes colocar un token de escudo en la carta de cualquier jugador excepto la tuya.",
+  "seer": "Vidente, despierta. Puedes mirar la carta de otro jugador o dos de las cartas del centro.",
+  "apprentice-seer": "Aprendiz de Vidente, despierta. Puedes mirar una de las cartas del centro.",
+  "paranormal-investigator": "Investigador Paranormal, despierta. Puedes mirar hasta dos cartas de otros jugadores.",
+  "witch": "Bruja, despierta. Puedes mirar una de las cartas del centro e intercambiarla con la carta de cualquier jugador.",
+  "robber": "Ladrón, despierta. Puedes intercambiar tu carta con la carta de otro jugador y luego ver tu nueva carta.",
+  "troublemaker": "Problemático, despierta. Puedes intercambiar las cartas entre dos jugadores.",
+  "drunk": "Borracho, despierta e intercambia tu carta con una carta del centro.",
+  "insomniac": "Insomne, despierta y mira tu carta.",
+  "revealer": "Revelador, despierta. Puedes voltear la carta de otro jugador boca arriba.",
+  "curator": "Curador, despierta. Puedes ver uno de los tokens de Artefacto y colocarlo boca abajo en la carta de cualquier jugador.",
+  "hunter": "Los Cazadores no se despiertan por la noche.",
+  "tanner": "Los Curtidores no se despiertan por la noche.",
+  "village-idiot": "Los Idiotas del Pueblo no se despiertan por la noche."
+}

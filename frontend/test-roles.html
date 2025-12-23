@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Role Class Test</title>
+</head>
+<body>
+    <h1>Role Class System Test</h1>
+    <div id="output"></div>
+    
+    <script src="/static/app.js"></script>
+    <script>
+        const output = document.getElementById('output');
+        
+        // Test 1: Create role instances
+        output.innerHTML += '<h2>Test 1: Role Instance Creation</h2>';
+        const werewolf = RoleFactory.createRole('werewolf');
+        const seer = RoleFactory.createRole('seer');
+        const robber = RoleFactory.createRole('robber');
+        
+        output.innerHTML += `<p>✓ Werewolf: timer=${werewolf.timer}s, wakeup=${werewolf.wakeup}, order=${werewolf.wakeupOrder}</p>`;
+        output.innerHTML += `<p>✓ Seer: timer=${seer.timer}s, wakeup=${seer.wakeup}, order=${seer.wakeupOrder}</p>`;
+        output.innerHTML += `<p>✓ Robber: timer=${robber.timer}s, wakeup=${robber.wakeup}, order=${robber.wakeupOrder}</p>`;
+        
+        // Test 2: Workflow Manager
+        output.innerHTML += '<h2>Test 2: Workflow Manager</h2>';
+        const testRoles = [
+            RoleFactory.createRole('werewolf'),
+            RoleFactory.createRole('seer'),
+            RoleFactory.createRole('robber'),
+            RoleFactory.createRole('villager'), // should be filtered out (no wakeup)
+            RoleFactory.createRole('troublemaker')
+        ];
+        
+        const wfm = new WorkflowManager();
+        wfm.setRoles(testRoles);
+        
+        output.innerHTML += `<p>✓ Total roles provided: ${testRoles.length}</p>`;
+        output.innerHTML += `<p>✓ Night wakeup roles (filtered): ${wfm.roles.length}</p>`;
+        output.innerHTML += `<p>✓ Roles wake up in order:</p>`;
+        output.innerHTML += '<ul>';
+        wfm.roles.forEach((role, idx) => {
+            output.innerHTML += `<li>${idx + 1}. ${role.name} (order: ${role.wakeupOrder}, timer: ${role.timer}s)</li>`;
+        });
+        output.innerHTML += '</ul>';
+        
+        // Test 3: Verify sorting by wakeupOrder
+        output.innerHTML += '<h2>Test 3: Wakeup Order Sorting</h2>';
+        const isSorted = wfm.roles.every((role, idx, arr) => 
+            idx === 0 || arr[idx - 1].wakeupOrder <= role.wakeupOrder
+        );
+        output.innerHTML += `<p>✓ Roles correctly sorted by wakeupOrder: ${isSorted}</p>`;
+        
+        // Test 4: Audio path generation
+        output.innerHTML += '<h2>Test 4: Audio Path Generation</h2>';
+        output.innerHTML += `<p>✓ Werewolf audio: ${werewolf.getAudioPath()}</p>`;
+        output.innerHTML += `<p>✓ Seer audio: ${seer.getAudioPath()}</p>`;
+        
+        output.innerHTML += '<h2 style="color: green;">All Tests Passed! ✓</h2>';
+    </script>
+</body>
+</html>

@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Speech API Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .info {
+            background: #f0f0f0;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .success {
+            color: green;
+            font-weight: bold;
+        }
+        .error {
+            color: red;
+            font-weight: bold;
+        }
+        select {
+            padding: 8px;
+            font-size: 14px;
+            margin: 10px 0;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎤 Web Speech API Test</h1>
+    
+    <div class="test-section">
+        <h2>Browser Support Check</h2>
+        <div id="support-status"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Available Voices</h2>
+        <div id="voices-list"></div>
+        <select id="voice-select" disabled>
+            <option>Loading voices...</option>
+        </select>
+    </div>
+
+    <div class="test-section">
+        <h2>Test Role Announcements</h2>
+        <label>Language: 
+            <select id="test-language">
+                <option value="en">English</option>
+                <option value="es">Español</option>
+                <option value="zh">中文</option>
+            </select>
+        </label>
+        <p>Click buttons to hear role announcements:</p>
+        <button onclick="testRole('werewolf')">🐺 Werewolf</button>
+        <button onclick="testRole('seer')">🔮 Seer</button>
+        <button onclick="testRole('robber')">🥷 Robber</button>
+        <button onclick="testRole('troublemaker')">😈 Troublemaker</button>
+        <button onclick="testRole('drunk')">🍺 Drunk</button>
+    </div>
+
+    <div class="test-section">
+        <h2>Custom Text</h2>
+        <input type="text" id="custom-text" value="Hello, this is a test!" style="width: 60%; padding: 8px;">
+        <button onclick="speakCustom()">Speak Custom Text</button>
+    </div>
+
+    <div class="test-section">
+        <h2>Voice Settings</h2>
+        <label>Rate (Speed): <input type="range" id="rate" min="0.5" max="2" step="0.1" value="0.9"> <span id="rate-val">0.9</span></label><br>
+        <label>Pitch: <input type="range" id="pitch" min="0" max="2" step="0.1" value="1.0"> <span id="pitch-val">1.0</span></label><br>
+        <label>Volume: <input type="range" id="volume" min="0" max="1" step="0.1" value="1.0"> <span id="volume-val">1.0</span></label>
+    </div>
+
+    <script src="/static/translation-manager.js"></script>
+    <script src="/static/app.js"></script>
+    <script>
+        // Check browser support
+        const supportStatus = document.getElementById('support-status');
+        if ('speechSynthesis' in window) {
+            supportStatus.innerHTML = '<div class="success">✅ Web Speech API is supported in this browser!</div>';
+        } else {
+            supportStatus.innerHTML = '<div class="error">❌ Web Speech API is NOT supported in this browser.</div>';
+        }
+
+        // Load and display available voices
+        function displayVoices() {
+            const voices = window.speechSynthesis.getVoices();
+            const voicesList = document.getElementById('voices-list');
+            const voiceSelect = document.getElementById('voice-select');
+            
+            if (voices.length === 0) {
+                voicesList.innerHTML = '<div class="info">No voices loaded yet...</div>';
+                return;
+            }
+
+            voicesList.innerHTML = `<div class="info">Found ${voices.length} voices</div>`;
+            
+            voiceSelect.innerHTML = '';
+            voiceSelect.disabled = false;
+            voices.forEach((voice, idx) => {
+                const option = document.createElement('option');
+                option.value = idx;
+                option.textContent = `${voice.name} (${voice.lang})`;
+                voiceSelect.appendChild(option);
+            });
+        }
+
+        // Load voices (async in some browsers)
+        if (window.speechSynthesis.onvoiceschanged !== undefined) {
+            window.speechSynthesis.onvoiceschanged = displayVoices;
+        }
+        displayVoices();
+
+        // Update slider value displays
+        ['rate', 'pitch', 'volume'].forEach(id => {
+            const slider = document.getElementById(id);
+            const display = document.getElementById(id + '-val');
+            slider.addEventListener('input', () => {
+                display.textContent = slider.value;
+            });
+        });
+
+        // Language selector handler
+        document.getElementById('test-language').addEventListener('change', async (e) => {
+            await translationManager.setLanguage(e.target.value);
+            console.log('Language changed to:', e.target.value);
+        });
+
+        // Test a specific role
+        async function testRole(roleId) {
+            const role = RoleFactory.createRole(roleId);
+            if (!role) {
+                alert('Role not found!');
+                return;
+            }
+
+            const announcement = await role.getAnnouncement();
+            console.log(`Testing ${role.name} (${translationManager.getCurrentLanguage()}): "${announcement}"`);
+            await role.playAudio();
+        }
+
+        // Speak custom text with settings
+        function speakCustom() {
+            const text = document.getElementById('custom-text').value;
+            const rate = parseFloat(document.getElementById('rate').value);
+            const pitch = parseFloat(document.getElementById('pitch').value);
+            const volume = parseFloat(document.getElementById('volume').value);
+            const voiceIndex = parseInt(document.getElementById('voice-select').value);
+
+            if (!text) {
+                alert('Please enter some text!');
+                return;
+            }
+
+            window.speechSynthesis.cancel();
+
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.rate = rate;
+            utterance.pitch = pitch;
+            utterance.volume = volume;
+
+            const voices = window.speechSynthesis.getVoices();
+            if (voices[voiceIndex]) {
+                utterance.voice = voices[voiceIndex];
+            }
+
+            utterance.onstart = () => console.log('Speech started');
+            utterance.onend = () => console.log('Speech ended');
+            utterance.onerror = (e) => console.error('Speech error:', e);
+
+            window.speechSynthesis.speak(utterance);
+        }
+
+        console.log('Speech test page loaded. Click buttons to test announcements!');
+    </script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "werewolf": "Werewolves, wake up and look for other werewolves.",
+  "minion": "Minion, wake up. Werewolves, stick out your thumb so the Minion can see you.",
+  "alpha-wolf": "Alpha Wolf, wake up and exchange the center Werewolf card with another player's card.",
+  "mystic-wolf": "Mystic Wolf, wake up and look at one other player's card.",
+  "villager": "Villagers, keep sleeping.",
+  "sentinel": "Sentinel, wake up. You may place a shield token on any player's card but your own.",
+  "seer": "Seer, wake up. You may look at another player's card or two of the center cards.",
+  "apprentice-seer": "Apprentice Seer, wake up. You may look at one of the center cards.",
+  "paranormal-investigator": "Paranormal Investigator, wake up. You may look at up to two other players' cards.",
+  "witch": "Witch, wake up. You may look at one of the center cards and exchange it with any player's card.",
+  "robber": "Robber, wake up. You may exchange your card with another player's card, and then view your new card.",
+  "troublemaker": "Troublemaker, wake up. You may exchange cards between two other players.",
+  "drunk": "Drunk, wake up and exchange your card with a card from the center.",
+  "insomniac": "Insomniac, wake up and look at your card.",
+  "revealer": "Revealer, wake up. You may flip another player's card face up.",
+  "curator": "Curator, wake up. You may view one of the Artifact tokens and place it face down on any player's card.",
+  "hunter": "Hunters do not wake at night.",
+  "tanner": "Tanners do not wake at night.",
+  "village-idiot": "Village Idiots do not wake at night."
+}
