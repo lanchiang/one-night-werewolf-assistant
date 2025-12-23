@@ -10,9 +10,22 @@ class TranslationManager {
         this.supportedLanguages = [
             { code: 'en', name: 'English', voice: 'en-US' },
             { code: 'es', name: 'Español', voice: 'es-ES' },
-            { code: 'zh', name: '中文', voice: 'zh-CN' }
+            { code: 'zh', name: '中文', voice: 'zh-CN' },
+            { code: 'de', name: 'Deutsch', voice: 'de-DE' }
         ];
         this.loadingPromises = {}; // Track in-flight requests
+    }
+
+    /**
+     * Get the BCP-47 language tag to use for SpeechSynthesisUtterance.lang
+     * @returns {string}
+     */
+    getSpeechLang() {
+        const langConfig = this.supportedLanguages.find(
+            lang => lang.code === this.currentLanguage
+        );
+
+        return langConfig?.voice || 'en-US';
     }
 
     /**

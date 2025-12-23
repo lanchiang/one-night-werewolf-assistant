@@ -6,6 +6,82 @@
 const API_BASE_URL = '';
 
 // ============================================================
+// OPTIONAL: COUNTDOWN WARNING SOUND (BEEP EACH SECOND)
+// ============================================================
+
+// Uses Web Audio API so you don't need to ship audio files.
+// Note: Browsers require a user gesture before audio can play.
+class CountdownTickSound {
+    constructor({ frequencyHz = 880, durationMs = 60, volume = 1.0 } = {}) {
+        this.frequencyHz = frequencyHz;
+        this.durationMs = durationMs;
+        this.volume = volume;
+
+        this._ctx = null;
+        this._disabled = false;
+    }
+
+    _ensureContext() {
+        if (this._disabled) return null;
+        if (this._ctx) return this._ctx;
+        const AudioContextImpl = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextImpl) {
+            this._disabled = true;
+            console.warn('[CountdownTickSound] Web Audio API not supported');
+            return null;
+        }
+        this._ctx = new AudioContextImpl();
+        return this._ctx;
+    }
+
+    // Call from a user gesture (click/tap) to satisfy autoplay policies.
+    unlock() {
+        const ctx = this._ensureContext();
+        if (!ctx) return;
+        if (ctx.state === 'suspended') {
+            ctx.resume().catch(() => {
+                // Ignore; some browsers are picky about gesture timing.
+            });
+        }
+    }
+
+    playTick() {
+        const ctx = this._ensureContext();
+        if (!ctx || this._disabled) return;
+        if (ctx.state === 'suspended') return;
+
+        const now = ctx.currentTime;
+        const durationS = Math.max(0.02, this.durationMs / 1000);
+
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(this.frequencyHz, now);
+
+        // Quick fade in/out to avoid clicks.
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(this.volume, now + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + durationS);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(now);
+        osc.stop(now + durationS);
+
+        osc.onended = () => {
+            try {
+                osc.disconnect();
+                gain.disconnect();
+            } catch {
+                // ignore
+            }
+        };
+    }
+}
+
+// ============================================================
 // ROLE CLASS SYSTEM
 // ============================================================
 
@@ -33,18 +109,20 @@ class Role {
 
     /**
      * Get announcement text for current language
+     * @param {string} translationKey
      * @returns {Promise<string>}
      */
-    async getAnnouncement() {
-        return await translationManager.get(this.id);
+    async getAnnouncement(translationKey = this.id) {
+        return await translationManager.get(translationKey);
     }
 
     /**
-     * Speak the role announcement using Web Speech API
+     * Speak arbitrary text using Web Speech API
+     * @param {string} text
      * @returns {Promise<void>}
      */
-    async playAudio() {
-        return new Promise(async (resolve, reject) => {
+    static async speakText(text) {
+        return new Promise((resolve) => {
             // Check if speech synthesis is supported
             if (!('speechSynthesis' in window)) {
                 console.warn('Speech synthesis not supported in this browser');
@@ -52,25 +130,25 @@ class Role {
                 return;
             }
 
-            // Cancel any ongoing speech
-            window.speechSynthesis.cancel();
-
-            // Get announcement in current language
-            const announcement = await this.getAnnouncement();
-            
-            if (!announcement) {
-                console.warn(`No announcement text for ${this.name}`);
+            if (!text) {
                 resolve();
                 return;
             }
 
-            const utterance = new SpeechSynthesisUtterance(announcement);
-            
+            // Cancel any ongoing speech
+            window.speechSynthesis.cancel();
+
+            const utterance = new SpeechSynthesisUtterance(text);
+
+            // Ensure the utterance language matches the selected UI language
+            // (helps browsers choose the correct voice even when exact voice matching fails)
+            utterance.lang = translationManager.getSpeechLang();
+
             // Configure voice settings
             utterance.rate = 0.9;    // Slightly slower for clarity
             utterance.pitch = 1.0;   // Normal pitch
             utterance.volume = 1.0;  // Full volume
-            
+
             // Select voice matching current language
             const matchingVoice = translationManager.getMatchingVoice();
             if (matchingVoice) {
@@ -85,12 +163,35 @@ class Role {
 
             utterance.onend = () => resolve();
             utterance.onerror = (error) => {
-                console.warn(`Speech synthesis error for ${this.name}:`, error);
+                console.warn('Speech synthesis error:', error);
                 resolve(); // Still resolve to continue workflow
             };
 
             window.speechSynthesis.speak(utterance);
         });
+    }
+
+    /**
+     * Speak an announcement by translation key using Web Speech API
+     * Defaults to this role's start announcement (role id).
+     * @param {string} translationKey
+     * @returns {Promise<void>}
+     */
+    async playAudio(translationKey = this.id) {
+        const announcement = await this.getAnnouncement(translationKey);
+        if (!announcement) {
+            console.warn(`No announcement text for key '${translationKey}' (${this.name})`);
+            return;
+        }
+        await Role.speakText(announcement);
+    }
+
+    /**
+     * Speak the role end announcement (e.g. "werewolf_end")
+     * @returns {Promise<void>}
+     */
+    async playEndAudio() {
+        await this.playAudio(`${this.id}_end`);
     }
 }
 
@@ -101,25 +202,31 @@ class Role {
 // Werewolf Team
 class Werewolf extends Role {
     constructor() {
-        super('werewolf', 'Werewolf', '/static/img/werewolf.jpg', 30, true, 1);
+        super('werewolf', 'Werewolf', '/static/img/werewolf.jpg', 15, true, 2);
     }
 }
 
 class Minion extends Role {
     constructor() {
-        super('minion', 'Minion', '/static/img/minion.jpg', 20, true, 2);
+        super('minion', 'Minion', '/static/img/minion.jpg', 10, true, 3);
     }
 }
 
 class AlphaWolf extends Role {
     constructor() {
-        super('alpha-wolf', 'Alpha Wolf', '/static/img/alpha_wolf.png', 30, true, 3);
+        super('alpha-wolf', 'Alpha Wolf', '/static/img/alpha_wolf.png', 15, true, 2.2);
     }
 }
 
 class MysticWolf extends Role {
     constructor() {
-        super('mystic-wolf', 'Mystic Wolf', '/static/img/mystic_wolf.png', 30, true, 4);
+        super('mystic-wolf', 'Mystic Wolf', '/static/img/mystic_wolf.png', 15, true, 2.3);
+    }
+}
+
+class DreamWolf extends Role {
+    constructor() {
+        super('dream-wolf', 'Dream Wolf', '/static/img/dream_wolf.png', 0, false, 999);
     }
 }
 
@@ -130,69 +237,87 @@ class Villager extends Role {
     }
 }
 
+class Mason extends Role {
+    constructor() {
+        super('mason', 'Mason', '/static/img/mason.png', 10, true, 4);
+    }
+}
+
 class Sentinel extends Role {
     constructor() {
-        super('sentinel', 'Sentinel', '/static/img/sentinel.png', 25, true, 5);
+        super('sentinel', 'Sentinel', '/static/img/sentinel.png', 15, true, 0);
+    }
+}
+
+class Bodyguard extends Role {
+    constructor() {
+        super('bodyguard', 'Bodyguard', '/static/img/bodyguard.png', 0, false, 999);
     }
 }
 
 class Seer extends Role {
     constructor() {
-        super('seer', 'Seer', '/static/img/seer.png', 30, true, 6);
+        super('seer', 'Seer', '/static/img/seer.png', 20, true, 5);
     }
 }
 
 class ApprenticeSeer extends Role {
     constructor() {
-        super('apprentice-seer', 'Apprentice Seer', '/static/img/apprentice_seer.png', 25, true, 7);
+        super('apprentice-seer', 'Apprentice Seer', '/static/img/apprentice_seer.png', 15, true, 5.2);
     }
 }
 
 class ParanormalInvestigator extends Role {
     constructor() {
-        super('paranormal-investigator', 'Paranormal Investigator', '/static/img/paranormal_investigator.png', 35, true, 8);
+        super('paranormal-investigator', 'Paranormal Investigator', '/static/img/paranormal_investigator.png', 25, true, 5.3);
     }
 }
 
 class Witch extends Role {
     constructor() {
-        super('witch', 'Witch', '/static/img/witch.png', 30, true, 9);
+        super('witch', 'Witch', '/static/img/witch.png', 15, true, 6.2);
+    }
+}
+
+class Doppelganger extends Role {
+    constructor() {
+        super('doppelganger', 'Doppelgänger', '/static/img/doppelganger.jpg', 20, true, 1);
     }
 }
 
 class Robber extends Role {
     constructor() {
-        super('robber', 'Robber', '/static/img/robber.png', 25, true, 10);
+        super('robber', 'Robber', '/static/img/robber.png', 15, true, 6);
     }
 }
 
 class Troublemaker extends Role {
     constructor() {
-        super('troublemaker', 'Troublemaker', '/static/img/troublemaker.png', 25, true, 11);
+        super('troublemaker', 'Troublemaker', '/static/img/troublemaker.png', 15, true, 7);
     }
 }
 
 class Drunk extends Role {
     constructor() {
-        super('drunk', 'Drunk', '/static/img/drunk.png', 20, true, 12);
+        super('drunk', 'Drunk', '/static/img/drunk.png', 10, true, 8);
     }
 }
 
 class Insomniac extends Role {
     constructor() {
-        super('insomniac', 'Insomniac', '/static/img/insomniac.png', 20, true, 13);
+        super('insomniac', 'Insomniac', '/static/img/insomniac.png', 10, true, 9);
     }
 }
 
 class Revealer extends Role {
     constructor() {
-        super('revealer', 'Revealer', '/static/img/revealer.png', 25, true, 14);
+        super('revealer', 'Revealer', '/static/img/revealer.png', 15, true, 10);
     }
 }
 
 class Curator extends Role {
     constructor() {
-        super('curator', 'Curator', '/static/img/curator.png', 25, true, 15);
+        super('curator', 'Curator', '/static/img/curator.png', 15, true, 11);
     }
 }
 
@@ -210,7 +335,7 @@ class Tanner extends Role {
 
 class VillageIdiot extends Role {
     constructor() {
-        super('village-idiot', 'Village Idiot', '/static/img/village_idiot.png', 0, false, 999);
+        super('village-idiot', 'Village Idiot', '/static/img/village_idiot.png', 20, true, 7.2);
     }
 }
 
@@ -246,12 +371,16 @@ if ('speechSynthesis' in window) {
 const RoleFactory = {
     createRole(id) {
         const roleMap = {
+            'doppelganger': Doppelganger,
             'werewolf': Werewolf,
             'minion': Minion,
             'alpha-wolf': AlphaWolf,
             'mystic-wolf': MysticWolf,
+            'dream-wolf': DreamWolf,
             'villager': Villager,
+            'mason': Mason,
             'sentinel': Sentinel,
+            'bodyguard': Bodyguard,
             'seer': Seer,
             'apprentice-seer': ApprenticeSeer,
             'paranormal-investigator': ParanormalInvestigator,
@@ -287,6 +416,18 @@ class WorkflowManager {
         this.intervalId = null;
         this.isRunning = false;
         this.isPaused = false;
+        this.isTransitioning = false;
+        this.transitionPauseMs = 2000;
+
+        this.countdownTickSound = new CountdownTickSound();
+        this._halfTickTimeoutId = null;
+    }
+
+    _clearHalfTickTimeout() {
+        if (this._halfTickTimeoutId) {
+            clearTimeout(this._halfTickTimeoutId);
+            this._halfTickTimeoutId = null;
+        }
     }
 
     /**
@@ -305,7 +446,10 @@ class WorkflowManager {
      * Reset workflow to initial state
      */
     reset() {
+        // Cancel any ongoing speech
+        window.speechSynthesis.cancel();
         this.stop();
+        this._clearHalfTickTimeout();
         this.currentIndex = 0;
         this.remainingTime = this.roles[0]?.timer || 0;
         this.isRunning = false;
@@ -317,13 +461,18 @@ class WorkflowManager {
      */
     async start() {
         if (this.roles.length === 0) return;
+        if (this.isTransitioning) return;
         
         this.isRunning = true;
         this.isPaused = false;
 
-        // Play audio for current role if just starting this role
-        if (this.remainingTime === this.roles[this.currentIndex].timer) {
-            await this.roles[this.currentIndex].playAudio();
+        const currentRole = this.roles[this.currentIndex];
+        if (!currentRole) return;
+
+        // If we're (re)starting at the top of a role, speak the announcement first,
+        // then begin the countdown ticks.
+        if (this.remainingTime === currentRole.timer) {
+            await currentRole.playAudio();
         }
 
         this.intervalId = setInterval(() => {
@@ -337,6 +486,7 @@ class WorkflowManager {
     pause() {
         this.isPaused = true;
         this.isRunning = false;
+        this._clearHalfTickTimeout();
         if (this.intervalId) {
             clearInterval(this.intervalId);
             this.intervalId = null;
@@ -349,6 +499,7 @@ class WorkflowManager {
     stop() {
         this.isRunning = false;
         this.isPaused = false;
+        this._clearHalfTickTimeout();
         if (this.intervalId) {
             clearInterval(this.intervalId);
             this.intervalId = null;
@@ -359,9 +510,12 @@ class WorkflowManager {
      * Toggle between running and paused
      */
     togglePause() {
+        if (this.isTransitioning) return;
         if (this.isRunning) {
             this.pause();
         } else if (this.isPaused || !this.isRunning) {
+            // Unlock audio on the user's click.
+            this.countdownTickSound.unlock();
             this.start();
         }
     }
@@ -370,10 +524,91 @@ class WorkflowManager {
      * Execute one tick of the timer
      */
     tick() {
+        if (!this.isRunning || this.isPaused || this.isTransitioning) return;
         this.remainingTime -= 1;
 
+        // Warning sound each second during countdown (but not when hitting 0).
+        if (this.remainingTime > 0) {
+            this.countdownTickSound.playTick();
+
+            // Final 5 seconds: beep every 0.5s.
+            if (this.remainingTime <= 5) {
+                this._clearHalfTickTimeout();
+                this._halfTickTimeoutId = setTimeout(() => {
+                    this._halfTickTimeoutId = null;
+                    if (!this.isRunning || this.isPaused || this.isTransitioning) return;
+                    if (this.remainingTime <= 0) return;
+                    // Still within last 5 seconds.
+                    if (this.remainingTime <= 5) {
+                        this.countdownTickSound.playTick();
+                    }
+                }, 500);
+            }
+        }
+
         if (this.remainingTime <= 0) {
-            this.advanceToNextRole();
+            this._beginRoleTransition();
+        }
+    }
+
+    async _playSystemAudio(translationKey) {
+        const text = await translationManager.get(translationKey);
+        if (!text) {
+            console.warn(`No system announcement text for key '${translationKey}'`);
+            return;
+        }
+        await Role.speakText(text);
+    }
+
+    _beginRoleTransition() {
+        if (this.isTransitioning) return;
+        this.isTransitioning = true;
+
+        // Prevent any scheduled half-ticks from beeping during announcements.
+        this._clearHalfTickTimeout();
+
+        // Stop ticking while we speak end/start announcements to avoid overlap.
+        if (this.intervalId) {
+            clearInterval(this.intervalId);
+            this.intervalId = null;
+        }
+
+        this._transitionFromCurrentRole()
+            .catch((err) => console.warn('Workflow transition error:', err))
+            .finally(() => {
+                this.isTransitioning = false;
+            });
+    }
+
+    async _transitionFromCurrentRole() {
+        const currentRole = this.roles[this.currentIndex] || null;
+        if (currentRole) {
+            await currentRole.playEndAudio();
+        }
+
+        // Small pause between back-to-back announcements to improve clarity.
+        if (this.transitionPauseMs > 0) {
+            await new Promise((resolve) => setTimeout(resolve, this.transitionPauseMs));
+        }
+
+        this.currentIndex += 1;
+
+        if (this.currentIndex >= this.roles.length) {
+            // Workflow complete: after the last role's end announcement, everybody opens eyes.
+            this.stop();
+            await this._playSystemAudio('all_open_eyes');
+            return;
+        }
+
+        // Set up next role
+        this.remainingTime = this.roles[this.currentIndex].timer;
+        await this.roles[this.currentIndex].playAudio();
+
+        // Resume ticking if the workflow is still running
+        if (this.isRunning && !this.isPaused) {
+            this.intervalId = setInterval(() => {
+                this.tick();
+            }, 1000);
         }
     }
 
@@ -451,41 +686,170 @@ const WEREWOLF_ROLES = [
     { id: 'werewolf', name: 'Werewolf', img: '/static/img/werewolf.jpg' },
     { id: 'minion', name: 'Minion', img: '/static/img/minion.jpg' },
     { id: 'alpha-wolf', name: 'Alpha Wolf', img: '/static/img/alpha_wolf.png' },
-    { id: 'mystic-wolf', name: 'Mystic Wolf', img: '/static/img/mystic_wolf.png' }
+    { id: 'mystic-wolf', name: 'Mystic Wolf', img: '/static/img/mystic_wolf.png' },
+    { id: 'dream-wolf', name: 'Dream Wolf', img: '/static/img/dream_wolf.png' }
 ];
 
 const VILLAGER_ROLES = [
+    { id: 'doppelganger', name: 'Doppelgänger', img: '/static/img/doppelganger.jpg' },
     { id: 'villager', name: 'Villager', img: '/static/img/villager.png' },
+    { id: 'mason', name: 'Mason', img: '/static/img/mason.png' },
+    { id: 'sentinel', name: 'Sentinel', img: '/static/img/sentinel.png' },
+    { id: 'bodyguard', name: 'Bodyguard', img: '/static/img/bodyguard.png' },
     { id: 'seer', name: 'Seer', img: '/static/img/seer.png' },
     { id: 'apprentice-seer', name: 'Apprentice Seer', img: '/static/img/apprentice_seer.png' },
+    { id: 'paranormal-investigator', name: 'Paranormal Investigator', img: '/static/img/paranormal_investigator.png' },
+    { id: 'witch', name: 'Witch', img: '/static/img/witch.png' },
     { id: 'robber', name: 'Robber', img: '/static/img/robber.png' },
     { id: 'troublemaker', name: 'Troublemaker', img: '/static/img/troublemaker.png' },
     { id: 'drunk', name: 'Drunk', img: '/static/img/drunk.png' },
     { id: 'insomniac', name: 'Insomniac', img: '/static/img/insomniac.png' },
-    { id: 'hunter', name: 'Hunter', img: '/static/img/hunter.png' },
-    { id: 'tanner', name: 'Tanner', img: '/static/img/tanner.png' },
-    { id: 'sentinel', name: 'Sentinel', img: '/static/img/sentinel.png' },
-    { id: 'paranormal-investigator', name: 'Paranormal Investigator', img: '/static/img/paranormal_investigator.png' },
-    { id: 'witch', name: 'Witch', img: '/static/img/witch.png' },
     { id: 'revealer', name: 'Revealer', img: '/static/img/revealer.png' },
     { id: 'curator', name: 'Curator', img: '/static/img/curator.png' },
+    { id: 'hunter', name: 'Hunter', img: '/static/img/hunter.png' },
+    { id: 'tanner', name: 'Tanner', img: '/static/img/tanner.png' },
     { id: 'village-idiot', name: 'Village Idiot', img: '/static/img/village_idiot.png' }
 ];
 
-// Map of selected role IDs (using legacy format for compatibility)
+// Role multiplicity configuration
+const ROLE_MULTIPLICITY = {
+    'werewolf': 2,        // Up to 2 werewolves
+    'minion': 1,
+    'alpha-wolf': 1,
+    'mystic-wolf': 1,
+    'dream-wolf': 1,
+    'doppelganger': 1,
+    'villager': 3,        // Up to 3 villagers
+    'mason': { min: 0, max: 2, step: 2 },  // 0 or 2 masons only
+    'sentinel': 1,
+    'bodyguard': 1,
+    'seer': 1,
+    'apprentice-seer': 1,
+    'paranormal-investigator': 1,
+    'witch': 1,
+    'robber': 1,
+    'troublemaker': 1,
+    'drunk': 1,
+    'insomniac': 1,
+    'revealer': 1,
+    'curator': 1,
+    'hunter': 1,
+    'tanner': 1,
+    'village-idiot': 1
+};
+
+// Map of selected role counts: { roleId: count }
 let selectedRoles = new Map();
 
-function toggleRole(role) {
+/**
+ * Check if Insomniac can be selected (requires Robber or Troublemaker in the game)
+ * @returns {boolean} true if Robber or Troublemaker is selected
+ */
+function isInsomniacAvailable() {
+    return (selectedRoles.get('robber') || 0) > 0 || (selectedRoles.get('troublemaker') || 0) > 0;
+}
+
+/**
+ * Get the maximum allowed count for a role
+ * @param {string} roleId
+ * @returns {number}
+ */
+function getMaxRoleCount(roleId) {
+    const config = ROLE_MULTIPLICITY[roleId];
+    if (typeof config === 'number') return config;
+    if (typeof config === 'object' && config.max) return config.max;
+    return 1;
+}
+
+/**
+ * Get the minimum allowed count for a role
+ * @param {string} roleId
+ * @returns {number}
+ */
+function getMinRoleCount(roleId) {
+    const config = ROLE_MULTIPLICITY[roleId];
+    if (typeof config === 'object' && config.min !== undefined) return config.min;
+    return 0;
+}
+
+/**
+ * Get total count of selected roles
+ * @returns {number}
+ */
+function getTotalRoleCount() {
+    let total = 0;
+    selectedRoles.forEach(count => { total += count; });
+    return total;
+}
+
+function toggleRole(role, increment = true) {
     const required = getRequiredCards();
-    if (!selectedRoles.has(role.id)) {
-        if (selectedRoles.size >= required) {
-            flashSelectionLimit();
-            return;
+    const currentCount = selectedRoles.get(role.id) || 0;
+    const maxCount = getMaxRoleCount(role.id);
+    const minCount = getMinRoleCount(role.id);
+    
+    let newCount = currentCount;
+    
+    if (increment) {
+        // Left click behavior: add an instance
+        // Special handling for Mason: can only be 0 or 2
+        if (role.id === 'mason') {
+            if (currentCount === 0) {
+                if (getTotalRoleCount() + 2 > required) {
+                    flashSelectionLimit();
+                    return;
+                }
+                newCount = 2;
+            } else {
+                // Already selected; left-click does not remove. Use right-click to remove.
+                return;
+            }
+        } else {
+            // Single-instance roles toggle on left click
+            if (maxCount === 1) {
+                newCount = currentCount > 0 ? 0 : 1;
+                if (newCount === 1 && getTotalRoleCount() + 1 > required) {
+                    flashSelectionLimit();
+                    return;
+                }
+            } else {
+                // Multi-instance roles: increment up to max
+                if (currentCount >= maxCount) return;
+                if (getTotalRoleCount() + 1 > required) {
+                    flashSelectionLimit();
+                    return;
+                }
+                newCount = currentCount + 1;
+            }
         }
-        selectedRoles.set(role.id, role);
+    } else {
+        // Right click behavior: remove an instance
+        if (role.id === 'mason') {
+            newCount = 0;
+        } else {
+            if (currentCount <= 0) return;
+            newCount = Math.max(minCount, currentCount - 1);
+        }
+    }
+    
+    // Prevent selecting Insomniac if requirement not met
+    if (role.id === 'insomniac' && newCount > currentCount && !isInsomniacAvailable()) {
+        flashSelectionLimit();
+        return;
+    }
+    
+    // Update role count
+    if (newCount > 0) {
+        selectedRoles.set(role.id, newCount);
     } else {
         selectedRoles.delete(role.id);
+        
+        // Auto-deselect Insomniac if its requirement (Robber or Troublemaker) is no longer met
+        if ((role.id === 'robber' || role.id === 'troublemaker') && (selectedRoles.get('insomniac') || 0) > 0 && !isInsomniacAvailable()) {
+            selectedRoles.delete('insomniac');
+        }
     }
+    
     updateRoleGridSelection();
     updateSelectedPanel();
     updateCountsDisplay();
@@ -507,20 +871,57 @@ function getRequiredCards() {
 function updateCountsDisplay() {
     const selCountEl = document.getElementById('selected-count');
     const reqCountEl = document.getElementById('required-count');
-    if (selCountEl) selCountEl.textContent = selectedRoles.size;
-    if (reqCountEl) reqCountEl.textContent = getRequiredCards();
+    const totalCount = getTotalRoleCount();
+    const required = getRequiredCards();
+    
+    if (selCountEl) selCountEl.textContent = totalCount;
+    if (reqCountEl) reqCountEl.textContent = required;
 
     const startGameBtn = document.getElementById('start-game');
     if (startGameBtn) {
-        const required = getRequiredCards();
-        startGameBtn.disabled = !(required > 0 && selectedRoles.size === required);
+        startGameBtn.disabled = !(required > 0 && totalCount === required);
     }
 }
 
 function updateRoleGridSelection() {
     document.querySelectorAll('.role-card').forEach(card => {
         const id = card.dataset.roleId;
-        if (selectedRoles.has(id)) card.classList.add('selected'); else card.classList.remove('selected');
+        const count = selectedRoles.get(id) || 0;
+        
+        // Update selection state
+        if (count > 0) {
+            card.classList.add('selected');
+            // Show count for roles that can have multiple instances
+            const maxCount = getMaxRoleCount(id);
+            if (maxCount > 1) {
+                const countLabel = card.querySelector('.role-count');
+                if (countLabel) {
+                    countLabel.textContent = count;
+                } else {
+                    const label = document.createElement('span');
+                    label.className = 'role-count';
+                    label.textContent = count;
+                    card.appendChild(label);
+                }
+            }
+        } else {
+            card.classList.remove('selected');
+            const countLabel = card.querySelector('.role-count');
+            if (countLabel) countLabel.remove();
+        }
+        
+        // Handle Insomniac availability
+        if (id === 'insomniac') {
+            if (isInsomniacAvailable() || count > 0) {
+                card.classList.remove('disabled');
+                card.style.pointerEvents = 'auto';
+                card.style.opacity = '1';
+            } else {
+                card.classList.add('disabled');
+                card.style.pointerEvents = 'none';
+                card.style.opacity = '0.5';
+            }
+        }
     });
 }
 
@@ -528,14 +929,21 @@ function updateSelectedPanel() {
     const panel = document.getElementById('selected-panel-list');
     if (!panel) return;
     panel.innerHTML = '';
-    selectedRoles.forEach(role => {
-        const item = document.createElement('div');
-        item.className = 'selected-item';
-        item.innerHTML = `<span class="avatar-small"><img src="${role.img}" alt="${role.name}"/></span><span class="name">${role.name}</span>`;
-        panel.appendChild(item);
+    
+    selectedRoles.forEach((count, roleId) => {
+        const roleData = WEREWOLF_ROLES.find(r => r.id === roleId) || VILLAGER_ROLES.find(r => r.id === roleId);
+        if (!roleData) return;
+        
+        for (let i = 0; i < count; i++) {
+            const item = document.createElement('div');
+            item.className = 'selected-item';
+            item.innerHTML = `<span class="avatar-small"><img src="${roleData.img}" alt="${roleData.name}"/></span><span class="name">${roleData.name}</span>`;
+            panel.appendChild(item);
+        }
     });
+    
     const clearBtn = document.getElementById('clear-selection');
-    if (clearBtn) clearBtn.disabled = selectedRoles.size === 0;
+    if (clearBtn) clearBtn.disabled = getTotalRoleCount() === 0;
 }
 
 /**
@@ -544,11 +952,10 @@ function updateSelectedPanel() {
  */
 function getSelectedRoleInstances() {
     const roleInstances = [];
-    selectedRoles.forEach((roleData, roleId) => {
+    selectedRoles.forEach((count, roleId) => {
+        if (!count || count <= 0) return;
         const role = RoleFactory.createRole(roleId);
-        if (role) {
-            roleInstances.push(role);
-        }
+        if (role) roleInstances.push(role);
     });
     return roleInstances;
 }
@@ -867,7 +1274,18 @@ function renderContent(id) {
         const controls = document.createElement('div');
         controls.className = 'role-controls';
         controls.innerHTML = `
-            <label>Number of players: <input id="num-players" type="number" min="1" value="5"/></label>
+            <label>Number of players:
+                <select id="num-players" aria-label="Number of players">
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                    <option value="5" selected>5</option>
+                    <option value="6">6</option>
+                    <option value="7">7</option>
+                    <option value="8">8</option>
+                    <option value="9">9</option>
+                    <option value="10">10</option>
+                </select>
+            </label>
             <div class="counts">Selected: <span id="selected-count">0</span> / Required: <span id="required-count">8</span>
             <span class="selection-limit-flash"></span></div>
             <button id="start-game" class="btn btn-small" disabled>Start the game</button>
@@ -894,7 +1312,11 @@ function renderContent(id) {
             card.className = 'role-card';
             card.dataset.roleId = r.id;
             card.innerHTML = `<div class="avatar"><img src="${r.img}" alt="${r.name}"/></div><div class="role-name">${r.name}</div>`;
-            card.addEventListener('click', () => toggleRole(r));
+            card.addEventListener('click', () => toggleRole(r, true));
+            card.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                toggleRole(r, false);
+            });
             wGrid.appendChild(card);
         });
         wSection.appendChild(wGrid);
@@ -912,7 +1334,11 @@ function renderContent(id) {
             card.className = 'role-card';
             card.dataset.roleId = r.id;
             card.innerHTML = `<div class="avatar"><img src="${r.img}" alt="${r.name}"/></div><div class="role-name">${r.name}</div>`;
-            card.addEventListener('click', () => toggleRole(r));
+            card.addEventListener('click', () => toggleRole(r, true));
+            card.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                toggleRole(r, false);
+            });
             vGrid.appendChild(card);
         });
         vSection.appendChild(vGrid);
@@ -939,12 +1365,12 @@ function renderContent(id) {
         main.appendChild(container);
 
         // hooks
-        document.getElementById('num-players').addEventListener('input', () => {
+        document.getElementById('num-players').addEventListener('change', () => {
             updateCountsDisplay();
         });
         document.getElementById('start-game').addEventListener('click', () => {
             const required = getRequiredCards();
-            if (selectedRoles.size !== required) return;
+            if (getTotalRoleCount() !== required) return;
             renderWakeupOrderView();
         });
         document.getElementById('clear-selection').addEventListener('click', () => {

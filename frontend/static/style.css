@@ -180,6 +180,14 @@ header h1 {
     border: 1px solid #dfe6f2;
 }
 
+.role-controls select {
+    width: 80px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid #dfe6f2;
+    background: white;
+}
+
 .counts { font-weight: 600; color: #333 }
 .selection-limit-flash.flash { animation: pulse 0.8s; color: #e74c3c }
 @keyframes pulse { 0%{opacity:1}50%{opacity:0.2}100%{opacity:1} }
@@ -201,14 +209,33 @@ header h1 {
     cursor: pointer;
     border: 2px solid transparent;
     transition: border-color 0.15s, transform 0.12s;
+    position: relative;
 }
 
 .role-card:hover { border-color: #cdd9ff; transform: translateY(-4px) }
 .role-card.selected { border-color: #667eea; background: linear-gradient(180deg,#f7f9ff,#ffffff) }
+.role-card.disabled { cursor: not-allowed; }
 .role-card .avatar { font-size: 28px; margin-bottom: 8px }
 .role-card .role-name { font-size: 0.95em }
 /* image avatars inside role cards */
 .role-card .avatar img { width: 72px; height: 72px; object-fit: contain; border-radius: 6px }
+/* Role count badge */
+.role-card .role-count {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    background: #667eea;
+    color: white;
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 0.9em;
+    border: 2px solid white;
+}
 
 /* Wakeup workflow */
 .wakeup-page h2 {
